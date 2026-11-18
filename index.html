@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Одна линия — Котики и Уют</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <button class="btn level-btn" id="levelBtn">УРОВЕНЬ 1</button>
+    <div class="cat-helper" id="catHelper"></div>
+    <div class="spacer"></div>
+    <div class="coins"><span>🪙</span><span id="coinCount">0</span></div>
+    <button class="btn hint-btn" id="hintBtn">💡 <span id="hintCount">3</span></button>
+    <button class="btn" id="resetBtn">↻</button>
+    <button class="btn" id="soundBtn">🔊</button>
+    <button class="btn" id="settingsBtn">⚙️</button>
+  </div>
+  <div class="progress-wrap">
+    <div class="bar"><i id="progressFill"></i></div>
+    <div class="counter" id="counter">0/0</div>
+  </div>
+  <div class="board-wrap" id="boardWrap">
+    <div class="board" id="board">
+      <svg class="line-svg" id="lineSvg"></svg>
+    </div>
+    <div id="debug"></div>
+  </div>
+</div>
+
+<!-- Победа -->
+<div class="overlay" id="winOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Победа!</h2>
+      <button class="btn close-btn" data-close="winOverlay">✕</button>
+    </div>
+    <div class="win-title" id="winTitle">Отлично!</div>
+    <div class="win-cat" id="winCat"></div>
+    <div class="stars" id="winStars"></div>
+    <div class="reward-line" id="winReward"></div>
+    <div class="modal-actions">
+      <button class="btn primary" id="nextLevelBtn">Следующий</button>
+      <button class="btn" id="replayBtn">Заново</button>
+    </div>
+  </div>
+</div>
+
+<!-- Уровни -->
+<div class="overlay" id="levelsOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Выбор уровня</h2>
+      <button class="btn close-btn" data-close="levelsOverlay">✕</button>
+    </div>
+    <div class="sub">Все уровни открыты</div>
+    <div class="level-grid" id="levelGrid"></div>
+  </div>
+</div>
+
+<!-- Настройки -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Настройки</h2>
+      <button class="btn close-btn" data-close="settingsOverlay">✕</button>
+    </div>
+    <div class="settings-row">
+      <button class="btn" id="galleryBtn">🐱 Коллекция</button>
+    </div>
+    <div class="settings-row">
+      <button class="btn" id="exportBtn">Экспорт</button>
+      <button class="btn" id="importBtn">Импорт</button>
+    </div>
+    <div class="settings-row">
+      <button class="btn" id="resetProgressBtn">Сброс прогресса</button>
+      <button class="btn" id="runTestsBtn">Запустить тесты</button>
+    </div>
+    <div class="test-status" id="testStatus">Тесты не запускались</div>
+  </div>
+</div>
+
+<!-- Галерея -->
+<div class="overlay" id="galleryOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Коллекция котиков</h2>
+      <button class="btn close-btn" data-close="galleryOverlay">✕</button>
+    </div>
+    <div class="sub">За каждые 5 уровней</div>
+    <div class="cat-gallery" id="catGallery"></div>
+  </div>
+</div>
+
+<div class="confetti-layer" id="confettiLayer"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+function toast(msg, ms=1800){
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove("show"), ms);
+}
+
+/* ---------- ГПСЧ ---------- */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- Котики ---------- */
+const CAT_EARS = ["/\\___/\\", "(\\_/)", "^..^", ">^..^<", "=^..^="];
+const CAT_FACES = ["( ̳• · • ̳)", "( =^･ω･^= )", "( >ω< )", "( ˘ ³˘)♥", "(๑˃ᴗ˂)ﻭ", "(•ө•)", "(=ↀωↀ=)"];
+const CAT_PAWS = ["o_(\")(\")", "/ > 🐟", "(\\_/)o", "ᓚᘏᗢ", "ฅ^•ﻌ•^ฅ"];
+const CAT_TAILS = ["~", "~ ~", "ᵕ̈", "≈"];
+function generateSymbolCat(seed){
+  const rng = mulberry32(seed>>>0);
+  const p = a=>a[Math.floor(rng()*a.length)];
+  return `${p(CAT_EARS)}\n${p(CAT_FACES)}\n ${p(CAT_PAWS)} ${p(CAT_TAILS)}`;
+}
+const MOODS = {
+  neutral: ["/\\_/\\\n( o.o )\n > ^ <", "(=^･ω･^=)\n  ~ мяу ~"],
+  happy: ["/\\_/\\\n( ^.^ )\n > ^ <", "(=^‥^=)\n  ♥ мур ♥"],
+  sad: ["/\\_/\\\n( ;.; )\n > ^ <", "(=；ω；=)\n  ~ эх ~"],
+  victory: ["/\\_/\\\n( ^ω^ )\n / > 🐟", "(๑˃ᴗ˂)ﻭ\n ★ ура! ★"]
+};
+function moodCat(mood, seed){
+  const arr = MOODS[mood] || MOODS.neutral;
+  return arr[Math.floor(mulberry32(seed>>>0)()*arr.length)];
+}
+
+/* ---------- Генератор уровней ---------- */
+function gridSizeForLevel(n){
+  if(n <= 10) return (n % 2 === 0) ? [4,4] : [5,5];
+  if(n <= 40) return (n % 2 === 0) ? [5,6] : [6,6];
+  return (n % 2 === 0) ? [6,7] : [7,8];
+}
+function pathLenForLevel(n){
+  if(n <= 10) return 8 + (n % 7);
+  if(n <= 40) return 15 + (n % 10);
+  return 25 + (n % 14);
+}
+function buildSolution(levelNumber){
+  const [rows, cols] = gridSizeForLevel(levelNumber);
+  const targetLen = Math.min(pathLenForLevel(levelNumber), rows*cols);
+  const rng = mulberry32(levelNumber * 1337);
+  for(let attempt=0; attempt<400; attempt++){
+    const sr = Math.floor(rng()*rows), sc = Math.floor(rng()*cols);
+    const visited = new Set([sr+","+sc]);
+    const path = [[sr,sc]];
+    while(path.length < targetLen){
+      const [r,c] = path[path.length-1];
+      const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+      for(let i=dirs.length-1;i>0;i--){
+        const j = Math.floor(rng()*(i+1));
+        [dirs[i],dirs[j]] = [dirs[j],dirs[i]];
+      }
+      let moved = false;
+      for(const [dr,dc] of dirs){
+        const nr = r+dr, nc = c+dc;
+        if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+        const key = nr+","+nc;
+        if(visited.has(key)) continue;
+        visited.add(key); path.push([nr,nc]); moved = true; break;
+      }
+      if(!moved) break;
+    }
+    if(path.length === targetLen) return {rows, cols, path};
+  }
+  const path = [];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+    const cc = (r % 2 === 0) ? c : cols-1-c;
+    path.push([r,cc]);
+  }
+  path.length = Math.min(targetLen, path.length);
+  return {rows, cols, path};
+}
+const levelCache = new Map();
+function getLevel(n){
+  if(!levelCache.has(n)){
+    const sol = buildSolution(n);
+    levelCache.set(n, {
+      number: n, rows: sol.rows, cols: sol.cols,
+      solutionPath: sol.path,
+      activeSet: new Set(sol.path.map(([r,c])=>r+","+c)),
+      start: sol.path[0], total: sol.path.length
+    });
+  }
+  return levelCache.get(n);
+}
+
+/* ---------- Сохранение ---------- */
+const SAVE_KEY = "one_line_cat_puzzle_v1";
+const defaultSave = () => ({
+  currentLevel: 1, maxUnlockedLevel: 100, coins: 0, hints: 3,
+  starsByLevel: {}, unlockedCats: [], soundEnabled: true, hintsUsedThisLevel: 0
+});
+let save = defaultSave();
+function loadSave(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return;
+    const data = JSON.parse(raw);
+    save = Object.assign(defaultSave(), data);
+    if(typeof save.starsByLevel !== "object" || !save.starsByLevel) save.starsByLevel = {};
+    if(!Array.isArray(save.unlockedCats)) save.unlockedCats = [];
+    save.maxUnlockedLevel = 100;
+  }catch(e){ console.warn("loadSave", e); }
+}
+function persist(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+  catch(e){ console.warn("persist", e); }
+}
+
+/* ---------- Звук ---------- */
+let audioCtx = null;
+function getAudio(){
+  if(!audioCtx){ try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  if(audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+const PENTA = [261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25,783.99,880.00];
+function tone(freq, dur=0.14, type="sine", vol=0.16, when=0){
+  if(!save.soundEnabled) return;
+  const ac = getAudio(); if(!ac) return;
+  const t0 = ac.currentTime + when;
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.type = type; osc.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0+0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  osc.connect(g); g.connect(ac.destination);
+  osc.start(t0); osc.stop(t0+dur+0.03);
+}
+const sfxStep = i => tone(PENTA[i % PENTA.length], 0.12, "sine", 0.14);
+const sfxUndo = () => { tone(220,0.1,"triangle",0.12); tone(180,0.12,"triangle",0.1,0.05); };
+const sfxWin = () => { [523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f,0.28,"sine",0.18,i*0.09)); tone(1318.5,0.4,"sine",0.12,0.36); };
+function sfxMeow(){
+  if(!save.soundEnabled) return;
+  const ac = getAudio(); if(!ac) return;
+  const t0 = ac.currentTime;
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(520,t0);
+  osc.frequency.exponentialRampToValueAtTime(760,t0+0.12);
+  osc.frequency.exponentialRampToValueAtTime(420,t0+0.32);
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(0.12,t0+0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.36);
+  osc.connect(g); g.connect(ac.destination);
+  osc.start(t0); osc.stop(t0+0.38);
+}
+const sfxHint = () => { tone(880,0.1,"sine",0.1); tone(1174.7,0.14,"sine",0.1,0.08); };
+
+/* ---------- Состояние ---------- */
+const game = {
+  level: null, path: [], visited: new Set(),
+  dragging: false, lastPointerCell: null,
+  boardEls: [], cellSize: 40, hintsUsed: 0, won: false
+};
+
+/* ---------- Доска ---------- */
+function computeCellSize(rows, cols){
+  const wrap = $("boardWrap");
+  const rect = wrap.getBoundingClientRect();
+  const availW = Math.max(rect.width, window.innerWidth) - 28;
+  const availH = Math.max(rect.height, 240) - 28;
+  const gap = 6;
+  const maxW = (availW - gap*(cols-1) - 20) / cols;
+  const maxH = (availH - gap*(rows-1) - 20) / rows;
+  let s = Math.min(maxW, maxH, 74);
+  if(!isFinite(s) || s < 16) s = Math.max(16, Math.min(maxW, maxH) || 30);
+  return Math.floor(s);
+}
+
+function buildBoard(level){
+  const boardEl = $("board");
+  const svg = $("lineSvg");
+  Array.from(boardEl.children).forEach(ch => { if(ch !== svg) ch.remove(); });
+  svg.innerHTML = "";
+
+  const cellSize = computeCellSize(level.rows, level.cols);
+  game.cellSize = cellSize;
+  boardEl.style.gridTemplateColumns = `repeat(${level.cols}, ${cellSize}px)`;
+  boardEl.style.gridTemplateRows = `repeat(${level.rows}, ${cellSize}px)`;
+
+  game.boardEls = [];
+  for(let r=0;r<level.rows;r++){
+    const row = [];
+    for(let c=0;c<level.cols;c++){
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.dataset.r = r; cell.dataset.c = c;
+      if(!level.activeSet.has(r+","+c)) cell.classList.add("hidden");
+      if(r===level.start[0] && c===level.start[1]) cell.classList.add("start-mark");
+      boardEl.appendChild(cell);
+      row.push(cell);
+    }
+    game.boardEls.push(row);
+  }
+  const totalW = level.cols*cellSize + (level.cols-1)*6 + 20;
+  const totalH = level.rows*cellSize + (level.rows-1)*6 + 20;
+  svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
+  boardEl.style.width = totalW + "px";
+  boardEl.style.height = totalH + "px";
+
+  $("debug").textContent = `[${level.rows}×${level.cols}] клетка ${cellSize}px`;
+}
+
+function cellCenter(r,c){
+  const board = $("board");
+  const cell = game.boardEls[r][c];
+  const br = board.getBoundingClientRect();
+  const cr = cell.getBoundingClientRect();
+  return { x: cr.left - br.left + cr.width/2, y: cr.top - br.top + cr.height/2 };
+}
+
+function renderLine(){
+  const svg = $("lineSvg");
+  svg.innerHTML = "";
+  if(game.path.length < 1) return;
+  const pts = game.path.map(([r,c]) => cellCenter(r,c));
+  let d = "";
+  pts.forEach((p,i) => { d += (i===0?"M":"L") + p.x.toFixed(1) + " " + p.y.toFixed(1) + " "; });
+  const path = document.createElementNS("http://www.w3.org/2000/svg","path");
+  path.setAttribute("d", d);
+  path.setAttribute("stroke-width", Math.max(6, game.cellSize*0.22));
+  svg.appendChild(path);
+}
+
+function renderPath(){
+  if(!game.level) return;
+  const level = game.level;
+  for(let r=0;r<level.rows;r++) for(let c=0;c<level.cols;c++){
+    const el = game.boardEls[r][c];
+    if(el) el.classList.remove("active","head");
+  }
+  game.path.forEach(([r,c],i) => {
+    const el = game.boardEls[r][c];
+    if(!el) return;
+    el.classList.add("active");
+    if(i === game.path.length-1) el.classList.add("head");
+  });
+  renderLine();
+  const total = level.total, done = game.path.length;
+  $("counter").textContent = done + "/" + total;
+  $("progressFill").style.width = (done/total*100).toFixed(1) + "%";
+  if(!game.won){
+    if(done === 0) setHelperMood("neutral");
+    else if(done === total) setHelperMood("happy");
+    else setHelperMood("neutral");
+  }
+}
+function setHelperMood(m){
+  $("catHelper").textContent = moodCat(m, Date.now()%10000 + game.path.length);
+}
+
+/* ---------- Ход ---------- */
+const isAdj = (a,b) => Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]) === 1;
+const pathIdx = (r,c) => game.path.findIndex(([pr,pc]) => pr===r && pc===c);
+
+function tryStep(r,c){
+  if(game.won) return false;
+  const lv = game.level;
+  if(!lv || !lv.activeSet.has(r+","+c)) return false;
+  const idx = pathIdx(r,c);
+  if(idx !== -1){
+    if(idx === game.path.length-1) return false;
+    undoToIndex(idx); return true;
+  }
+  if(game.path.length === 0){
+    if(r===lv.start[0] && c===lv.start[1]){
+      game.path.push([r,c]); game.visited.add(r+","+c);
+      sfxStep(0); renderPath(); checkWin(); return true;
+    }
+    return false;
+  }
+  const [lr,lc] = game.path[game.path.length-1];
+  if(!isAdj([lr,lc],[r,c])) return false;
+  game.path.push([r,c]); game.visited.add(r+","+c);
+  sfxStep(game.path.length-1); renderPath(); checkWin(); return true;
+}
+function undoToIndex(idx){
+  if(idx < 0) return;
+  while(game.path.length > idx+1){
+    const [r,c] = game.path.pop();
+    game.visited.delete(r+","+c);
+  }
+  sfxUndo(); setHelperMood("sad"); renderPath();
+}
+function undoLast(){
+  if(game.path.length <= 1){
+    if(game.path.length === 1){ game.path=[]; game.visited.clear(); sfxUndo(); renderPath(); }
+    return;
+  }
+  const [r,c] = game.path.pop();
+  game.visited.delete(r+","+c);
+  sfxUndo(); setHelperMood("sad"); renderPath();
+}
+function restartLevel(){
+  if(!game.level) return;
+  game.path = []; game.visited.clear(); game.won = false; game.hintsUsed = 0;
+  save.hintsUsedThisLevel = 0; setHelperMood("neutral"); renderPath();
+}
+function checkWin(){
+  if(game.path.length === game.level.total){
+    game.won = true; setHelperMood("victory"); onWin();
+  }
+}
+
+/* ---------- Победа ---------- */
+const PHRASES = ["Отлично!","Умница!","Великолепно!","Блестяще!","Так держать!","Превосходно!","Супер!","Идеально!","Мур-р-р, гениально!"];
+const calcStars = h => h===0 ? 3 : h===1 ? 2 : 1;
+function onWin(){
+  const lv = game.level, n = lv.number;
+  const stars = calcStars(game.hintsUsed);
+  if(stars > (save.starsByLevel[n]||0)) save.starsByLevel[n] = stars;
+  save.coins += 10;
+  let bonus = "";
+  if(n % 5 === 0 && !save.unlockedCats.includes(n)){
+    save.coins += 25; save.hints += 1; save.unlockedCats.push(n);
+    bonus = " + сундук: 25 🪙, 1 💡, новый котик!";
+  }
+  persist(); updateHUD(); sfxWin(); launchConfetti(); waveTiles();
+  const phrase = PHRASES[Math.floor(mulberry32(n*31+stars)()*PHRASES.length)];
+  $("winTitle").textContent = phrase;
+  $("winCat").textContent = generateSymbolCat(n*97 + stars*13);
+  let sh = "";
+  for(let i=0;i<3;i++) sh += `<span class="${i<stars?"":"dim"}">★</span>`;
+  $("winStars").innerHTML = sh;
+  $("winReward").textContent = `+10 монет${bonus}`;
+  $("winOverlay").classList.add("show");
+}
+function waveTiles(){
+  if(!game.level) return;
+  game.path.forEach(([r,c],i) => {
+    const el = game.boardEls[r][c]; if(!el) return;
+    setTimeout(() => {
+      el.classList.add("win-wave");
+      setTimeout(() => el.classList.remove("win-wave"), 520);
+    }, i*18);
+  });
+}
+function launchConfetti(){
+  const layer = $("confettiLayer");
+  const sym = ["🐾","⭐","✨","🐱","✦","❋","♥"];
+  for(let i=0;i<42;i++){
+    const el = document.createElement("div");
+    el.className = "confetti";
+    el.textContent = sym[Math.floor(Math.random()*sym.length)];
+    el.style.left = Math.random()*100 + "vw";
+    el.style.animationDuration = (1.8 + Math.random()*1.6) + "s";
+    el.style.animationDelay = (Math.random()*0.5) + "s";
+    el.style.fontSize = (12 + Math.random()*16) + "px";
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 3800);
+  }
+}
+
+/* ---------- HUD ---------- */
+function updateHUD(){
+  $("levelBtn").textContent = "УРОВЕНЬ " + save.currentLevel;
+  $("coinCount").textContent = save.coins;
+  $("hintCount").textContent = save.hints;
+  $("soundBtn").textContent = save.soundEnabled ? "🔊" : "🔇";
+}
+
+/* ---------- Загрузка ---------- */
+function loadLevel(n){
+  save.currentLevel = n; persist();
+  const lv = getLevel(n);
+  game.level = lv; restartLevel();
+  buildBoard(lv); renderPath(); updateHUD();
+  $("winOverlay").classList.remove("show");
+  setHelperMood("neutral");
+}
+
+/* ---------- Ввод ---------- */
+function cellFromEvent(e){
+  const board = $("board");
+  const rect = board.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const lv = game.level; if(!lv) return null;
+  let best = null, bd = Infinity;
+  for(let r=0;r<lv.rows;r++) for(let c=0;c<lv.cols;c++){
+    if(!lv.activeSet.has(r+","+c)) continue;
+    const cr = game.boardEls[r][c].getBoundingClientRect();
+    const cx = cr.left - rect.left + cr.width/2;
+    const cy = cr.top - rect.top + cr.height/2;
+    const d = Math.hypot(x-cx, y-cy);
+    if(d < bd){ bd = d; best = [r,c]; }
+  }
+  if(best && bd < game.cellSize*1.15) return best;
+  return null;
+}
+const boardEl = $("board");
+boardEl.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  try{ boardEl.setPointerCapture(e.pointerId); }catch(_){}
+  const cell = cellFromEvent(e); if(!cell) return;
+  game.dragging = true; game.lastPointerCell = cell;
+  tryStep(cell[0], cell[1]);
+}, {passive:false});
+boardEl.addEventListener("pointermove", e => {
+  if(!game.dragging) return;
+  e.preventDefault();
+  const cell = cellFromEvent(e); if(!cell) return;
+  if(game.lastPointerCell && cell[0]===game.lastPointerCell[0] && cell[1]===game.lastPointerCell[1]) return;
+  const idx = pathIdx(cell[0], cell[1]);
+  if(idx !== -1){
+    if(idx === game.path.length-2){ undoLast(); game.lastPointerCell = cell; return; }
+    if(idx < game.path.length-1){ undoToIndex(idx); game.lastPointerCell = cell; return; }
+  }
+  tryStep(cell[0], cell[1]); game.lastPointerCell = cell;
+}, {passive:false});
+function endDrag(){ game.dragging = false; game.lastPointerCell = null; }
+boardEl.addEventListener("pointerup", endDrag);
+boardEl.addEventListener("pointercancel", endDrag);
+boardEl.addEventListener("pointerleave", e => { if(game.dragging && e.pointerType==="mouse") endDrag(); });
+
+window.addEventListener("keydown", e => {
+  const k = e.key;
+  if(k==="r"||k==="R"||k==="к"||k==="К"){ restartLevel(); return; }
+  if(k==="z"||k==="Z"||k==="Backspace"){ e.preventDefault(); undoLast(); return; }
+  const map = {"ArrowUp":[-1,0],"ArrowDown":[1,0],"ArrowLeft":[0,-1],"ArrowRight":[0,1],
+    "w":[-1,0],"s":[1,0],"a":[0,-1],"d":[0,1],"ц":[-1,0],"ы":[1,0],"ф":[0,-1],"в":[0,1]};
+  const d = map[k];
+  if(d){
+    e.preventDefault();
+    if(game.path.length === 0){ tryStep(game.level.start[0], game.level.start[1]); return; }
+    const [r,c] = game.path[game.path.length-1];
+    tryStep(r+d[0], c+d[1]);
+  }
+});
+
+/* ---------- Кнопки ---------- */
+$("levelBtn").onclick = openLevels;
+$("resetBtn").onclick = () => restartLevel();
+$("soundBtn").onclick = () => {
+  save.soundEnabled = !save.soundEnabled; persist(); updateHUD();
+  if(save.soundEnabled) sfxMeow();
+};
+$("catHelper").onclick = () => { sfxMeow(); setHelperMood("happy"); setTimeout(()=>setHelperMood("neutral"), 900); };
+$("hintBtn").onclick = () => {
+  if(game.won) return;
+  if(save.hints <= 0){
+    if(save.coins >= 30){ save.coins -= 30; save.hints += 1; persist(); updateHUD(); toast("Куплена подсказка"); }
+    else { toast("Нужно 30 🪙"); return; }
+  }
+  const lv = game.level, sol = lv.solutionPath;
+  let goodLen = 0;
+  for(let i=0;i<game.path.length;i++){
+    if(i<sol.length && game.path[i][0]===sol[i][0] && game.path[i][1]===sol[i][1]) goodLen++;
+    else break;
+  }
+  if(goodLen < game.path.length) undoToIndex(goodLen-1 >= 0 ? goodLen-1 : 0);
+  const cur = game.path.length; let steps = 0;
+  for(let i=cur; i<sol.length && steps<3; i++){
+    if(tryStep(sol[i][0], sol[i][1])) steps++; else break;
+  }
+  if(steps > 0){
+    save.hints -= 1; game.hintsUsed += 1; save.hintsUsedThisLevel = (save.hintsUsedThisLevel||0)+1;
+    persist(); updateHUD(); sfxHint(); toast(`Подсказка: +${steps} шагов`);
+  } else toast("Вы на верном пути!");
+};
+$("nextLevelBtn").onclick = () => { $("winOverlay").classList.remove("show"); loadLevel(save.currentLevel+1); };
+$("replayBtn").onclick = () => { $("winOverlay").classList.remove("show"); restartLevel(); };
+
+/* ---------- Меню уровней ---------- */
+function openLevels(){ buildLevelGrid(); $("levelsOverlay").classList.add("show"); }
+function buildLevelGrid(){
+  const grid = $("levelGrid"); grid.innerHTML = "";
+  const maxShow = Math.max(100, save.currentLevel+20);
+  for(let n=1;n<=maxShow;n++){
+    const card = document.createElement("button");
+    card.className = "level-card" + (n===save.currentLevel ? " current" : "");
+    const lv = getLevel(n);
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const cw = size/lv.cols, ch = size/lv.rows;
+    lv.activeSet.forEach(key => {
+      const [r,c] = key.split(",").map(Number);
+      ctx.fillStyle = "#F48C42";
+      const pad = Math.min(cw,ch)*0.12;
+      roundRect(ctx, c*cw+pad, r*ch+pad, cw-pad*2, ch-pad*2, Math.min(cw,ch)*0.18);
+      ctx.fill();
+    });
+    card.appendChild(canvas);
+    const num = document.createElement("span");
+    num.className = "num"; num.textContent = n; card.appendChild(num);
+    const st = save.starsByLevel[n]||0;
+    if(st > 0){ const s = document.createElement("span"); s.className="stars-mini"; s.textContent="★".repeat(st); card.appendChild(s); }
+    card.onclick = () => { $("levelsOverlay").classList.remove("show"); loadLevel(n); };
+    grid.appendChild(card);
+  }
+}
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+/* ---------- Настройки ---------- */
+$("settingsBtn").onclick = () => { $("settingsOverlay").classList.add("show"); updateTestStatusUI(); };
+$("galleryBtn").onclick = () => { buildGallery(); $("galleryOverlay").classList.add("show"); };
+function buildGallery(){
+  const cont = $("catGallery"); cont.innerHTML = "";
+  for(let i=1;i<=20;i++){
+    const key = i*5;
+    const un = save.unlockedCats.includes(key) || key <= 5*Math.floor(save.currentLevel/5);
+    const card = document.createElement("div");
+    card.className = "cat-card" + (un ? "" : " locked");
+    card.textContent = un ? generateSymbolCat(key*77+5) : "🔒\n???";
+    cont.appendChild(card);
+  }
+}
+$("exportBtn").onclick = () => {
+  try{
+    const str = btoa(unescape(encodeURIComponent(JSON.stringify(save))));
+    navigator.clipboard.writeText(str).then(()=>toast("Код скопирован")).catch(()=>prompt("Скопируйте:", str));
+  }catch(e){ toast("Ошибка"); }
+};
+$("importBtn").onclick = () => {
+  const str = prompt("Вставьте код:"); if(!str) return;
+  try{
+    const data = JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
+    save = Object.assign(defaultSave(), data); save.maxUnlockedLevel = 100;
+    persist(); updateHUD(); loadLevel(save.currentLevel); toast("Загружено");
+  }catch(e){ toast("Неверный код"); }
+};
+$("resetProgressBtn").onclick = () => {
+  if(!confirm("Сбросить весь прогресс?")) return;
+  if(!confirm("Точно?")) return;
+  save = defaultSave(); persist(); updateHUD(); loadLevel(1); toast("Сброшено");
+};
+
+/* ---------- Тесты ---------- */
+function runSelfTests(){
+  const res = [];
+  const log = (n,ok,d="") => res.push({Тест:n, Результат: ok?"PASS":"FAIL", Детали:d});
+  try{
+    const a=getLevel(1), b=getLevel(1), c=getLevel(25), d=getLevel(25);
+    const eq=(x,y)=>x.rows===y.rows&&x.cols===y.cols&&JSON.stringify(x.solutionPath)===JSON.stringify(y.solutionPath);
+    log("Детерминизм", eq(a,b)&&eq(c,d));
+  }catch(e){ log("Детерминизм",false,e.message); }
+  try{
+    let ok=true, err="";
+    for(let n=1;n<=50;n++){
+      const lv = getLevel(n);
+      if(lv.solutionPath.length!==lv.total){ ok=false; err=`ур.${n}: len`; break; }
+      const seen = new Set();
+      for(let i=0;i<lv.solutionPath.length;i++){
+        const [r,c] = lv.solutionPath[i];
+        const key = r+","+c;
+        if(seen.has(key)){ ok=false; err=`ур.${n}: повтор`; break; }
+        seen.add(key);
+        if(i>0){
+          const [pr,pc] = lv.solutionPath[i-1];
+          if(Math.abs(pr-r)+Math.abs(pc-c)!==1){ ok=false; err=`ур.${n}: несоседние`; break; }
+        }
+        if(!lv.activeSet.has(key)){ ok=false; err=`ур.${n}: вне поля`; break; }
+      }
+      if(!ok) break;
+    }
+    log("Проходимость 1–50", ok, err);
+  }catch(e){ log("Проходимость",false,e.message); }
+  try{
+    const lv = getLevel(3);
+    let path=[], vis=new Set();
+    const pi=(r,c)=>path.findIndex(([a,b])=>a===r&&b===c);
+    function step(r,c){
+      if(pi(r,c)!==-1){ path=path.slice(0,pi(r,c)+1); return; }
+      if(path.length===0){ if(r===lv.start[0]&&c===lv.start[1]){path.push([r,c]); vis.add(r+","+c);} return; }
+      const [lr,lc]=path[path.length-1];
+      if(Math.abs(lr-r)+Math.abs(lc-c)!==1) return;
+      if(!lv.activeSet.has(r+","+c)) return;
+      path.push([r,c]); vis.add(r+","+c);
+    }
+    step(lv.start[0], lv.start[1]);
+    let ok = path.length===1;
+    step(lv.start[0]+1, lv.start[1]+1);
+    if(path.length!==1) ok=false;
+    for(let i=1;i<Math.min(4,lv.solutionPath.length);i++) step(lv.solutionPath[i][0], lv.solutionPath[i][1]);
+    step(path[0][0], path[0][1]);
+    if(path.length!==1) ok=false;
+    log("Логика хода/отката", ok);
+  }catch(e){ log("Логика хода/отката",false,e.message); }
+  try{
+    const lv = getLevel(7);
+    let path=[[...lv.start]];
+    let goodLen = 0;
+    for(let i=0;i<path.length;i++){
+      if(i<lv.solutionPath.length&&path[i][0]===lv.solutionPath[i][0]&&path[i][1]===lv.solutionPath[i][1]) goodLen++;
+      else break;
+    }
+    let ok = goodLen>=1, built=0, cur=path.slice(0,goodLen);
+    for(let i=goodLen; i<lv.solutionPath.length && built<3; i++){
+      const [r,c]=lv.solutionPath[i], [pr,pc]=cur[cur.length-1];
+      if(Math.abs(pr-r)+Math.abs(pc-c)===1){ cur.push([r,c]); built++; } else { ok=false; break; }
+    }
+    if(built===0) ok=false;
+    log("Подсказка", ok);
+  }catch(e){ log("Подсказка",false,e.message); }
+  try{
+    const s0=calcStars(0), s1=calcStars(1), s2=calcStars(2);
+    let ok = s0===3&&s1===2&&s2===1;
+    const ts = Object.assign(defaultSave(),{currentLevel:12,coins:77,hints:2,starsByLevel:{1:3,2:2},unlockedCats:[5,10]});
+    const p = JSON.parse(JSON.stringify(ts));
+    if(p.currentLevel!==12||p.coins!==77||p.starsByLevel[1]!==3) ok=false;
+    if(!Array.isArray(p.unlockedCats)||p.unlockedCats.length!==2) ok=false;
+    log("Награды/сохранение", ok);
+  }catch(e){ log("Награды/сохранение",false,e.message); }
+  console.table(res);
+  const pass = res.filter(r=>r.Результат==="PASS").length, total = res.length;
+  console.log("%c"+`${pass}/${total} тестов`, pass===total?"color:#6FCF97;font-weight:bold":"color:#EB5757;font-weight:bold");
+  window.__testResults = {res, pass, total};
+  updateTestStatusUI();
+}
+function updateTestStatusUI(){
+  const el = $("testStatus"); if(!el) return;
+  const tr = window.__testResults;
+  if(!tr){ el.textContent="Тесты не запускались"; el.className="test-status"; }
+  else if(tr.pass===tr.total){ el.textContent=`✅ ${tr.pass}/${tr.total} — всё отлично!`; el.className="test-status pass"; }
+  else { el.textContent=`❌ ${tr.pass}/${tr.total} — см. консоль`; el.className="test-status fail"; }
+}
+$("runTestsBtn").onclick = () => { runSelfTests(); toast("Тесты выполнены"); };
+
+/* ---------- Ресайз ---------- */
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  if(!game.level) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const saved = game.path.map(p => [...p]);
+    buildBoard(game.level);
+    game.path = saved;
+    renderPath();
+  }, 120);
+});
+
+/* ---------- Закрытие модалок ---------- */
+document.querySelectorAll('[data-close]').forEach(btn => {
+  btn.onclick = () => {
+    const id = btn.getAttribute('data-close');
+    document.getElementById(id).classList.remove('show');
+  };
+});
+
+/* ---------- Инициализация ---------- */
+function init(){
+  loadSave();
+  save.maxUnlockedLevel = 100;
+  if(!Array.isArray(save.unlockedCats)) save.unlockedCats = [];
+  for(let k=5; k<=save.currentLevel; k+=5){
+    if(!save.unlockedCats.includes(k)) save.unlockedCats.push(k);
+  }
+  updateHUD();
+  loadLevel(clamp(save.currentLevel || 1, 1, 999));
+  updateTestStatusUI();
+  setTimeout(() => { try{ runSelfTests(); }catch(e){ console.warn("Тесты упали", e); } }, 500);
+  document.body.addEventListener("pointerdown", function unlock(){
+    getAudio(); document.body.removeEventListener("pointerdown", unlock);
+  }, {once:true});
+}
+
+document.addEventListener("contextmenu", e => e.preventDefault());
+document.addEventListener("touchmove", e => { if(e.target.closest(".board")) e.preventDefault(); }, {passive:false});
+document.addEventListener("gesturestart", e => e.preventDefault());
+
+window.addEventListener("load", () => {
+  init();
+  setTimeout(() => {
+    if(game.level){
+      const saved = game.path.map(p => [...p]);
+      buildBoard(game.level);
+      game.path = saved;
+      renderPath();
+    }
+  }, 250);
+});
+
+if(window.ResizeObserver){
+  new ResizeObserver(() => {
+    if(!game.level) return;
+    const saved = game.path.map(p => [...p]);
+    buildBoard(game.level);
+    game.path = saved;
+    renderPath();
+  }).observe(document.getElementById("boardWrap"));
+}
+</script>
+</body>
+</html>

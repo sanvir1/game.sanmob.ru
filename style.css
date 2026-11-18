@@ -7,11 +7,13 @@
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 html,body{height:100%; margin:0; padding:0; overflow:hidden;}
 body{
+  position:fixed; inset:0;                 /* фикс. вьюпорт — нет скролла/дёрганья */
+  overscroll-behavior:none;
   background:radial-gradient(1200px 800px at 50% -10%, #232833 0%, var(--bg) 60%);
   color:var(--text);
   font-family: ui-rounded, "Segoe UI", system-ui, -apple-system, sans-serif;
   display:flex; flex-direction:column;
-  height:100dvh; width:100vw;
+  height:100%; width:100%;
   user-select:none; -webkit-user-select:none;
   touch-action:none;
 }
@@ -22,12 +24,13 @@ button{font-family:inherit; color:inherit; cursor:pointer; border:none; backgrou
   padding:8px 10px calc(8px + env(safe-area-inset-bottom));
   gap:8px; min-height:0;
 }
-/* фикс. высота topbar — котик не двигает layout */
+/* фикс. высота, кот абсолютом — не влияет на поток и не двигает страницу */
 .topbar{
+  position:relative;
   display:flex; align-items:center; gap:6px; flex-wrap:wrap;
   background:linear-gradient(180deg, var(--panel), var(--panel-2));
   border-radius:14px; padding:8px 10px; flex-shrink:0;
-  min-height:48px;
+  height:48px; min-height:48px; overflow:hidden;
   box-shadow:0 6px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
 }
 .btn{
@@ -42,15 +45,17 @@ button{font-family:inherit; color:inherit; cursor:pointer; border:none; backgrou
 .spacer{flex:1;}
 .coins{display:inline-flex; align-items:center; gap:5px; font-weight:700; font-size:14px;
   background:#2A2F37; padding:6px 10px; border-radius:10px;}
-/* котик-помощник: фикс. размер, не влияет на поток */
 .cat-helper{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
   font-size:11px; line-height:1.05; white-space:pre; text-align:center;
   background:#2A2F37; border-radius:10px; padding:5px 8px;
   width:92px; height:44px; overflow:hidden;
   display:flex; align-items:center; justify-content:center;
   color:#FFD9A8; transition:transform .2s; cursor:pointer; flex-shrink:0;
+  pointer-events:auto;
+  transform-origin:center;
 }
-.cat-helper:active{transform:scale(.94);}
+.cat-helper:active{transform:translate(-50%,-50%) scale(.94);}
 .progress-wrap{display:flex; align-items:center; gap:8px; width:100%; flex-shrink:0;}
 .bar{flex:1; height:9px; background:#2A2F37; border-radius:99px; overflow:hidden;}
 .bar > i{display:block; height:100%; width:0%;
@@ -63,6 +68,7 @@ button{font-family:inherit; color:inherit; cursor:pointer; border:none; backgrou
   display:flex; align-items:center; justify-content:center;
   overflow:hidden; min-height:120px;
   border:1px dashed rgba(255,255,255,.05); border-radius:16px;
+  touch-action:none; overscroll-behavior:none;
 }
 .board{
   position:relative; display:grid; gap:6px; padding:10px;
@@ -93,17 +99,11 @@ button{font-family:inherit; color:inherit; cursor:pointer; border:none; backgrou
   position:absolute;
 }
 @keyframes pawPulse{0%,100%{transform:scale(.9); opacity:.6}50%{transform:scale(1.1); opacity:1}}
-/* клетка-кот: препятствие */
 .cell.blocked{
   background:#2A2F37;
   box-shadow:0 3px 0 #1C2026, inset 0 1px 0 rgba(255,255,255,.04);
   cursor:default; pointer-events:none;
   display:flex; align-items:center; justify-content:center;
-}
-.cell.blocked::after{
-  content:"🐱"; position:absolute; font-size:0; 
-  display:flex; align-items:center; justify-content:center;
-  inset:0;
 }
 .line-svg{position:absolute; inset:0; width:100%; height:100%;
   pointer-events:none; z-index:5; overflow:visible;}

@@ -138,52 +138,154 @@ function moodCat(mood, seed){
   return arr[Math.floor(mulberry32(seed>>>0)()*arr.length)];
 }
 
-/* ---------- Генератор уровней ---------- */
+/* ---------- Генератор уровней (быстрый рост сложности, всегда проходимы) ---------- */
 function gridSizeForLevel(n){
-  if(n <= 10) return (n % 2 === 0) ? [4,4] : [5,5];
-  if(n <= 40) return (n % 2 === 0) ? [5,6] : [6,6];
-  return (n % 2 === 0) ? [6,7] : [7,8];
+  if(n <= 5)  return [3,3];
+  if(n <= 10) return (n % 2 === 0) ? [4,5] : [5,5];
+  if(n <= 20) return (n % 2 === 0) ? [5,6] : [6,6];
+  if(n <= 40) return (n % 2 === 0) ? [6,7] : [7,7];
+  return (n % 2 === 0) ? [7,8] : [8,8];
 }
-function pathLenForLevel(n){
-  if(n <= 10) return 8 + (n % 7);
-  if(n <= 40) return 15 + (n % 10);
-  return 25 + (n % 14);
+function pathLenForLevel(n, freeCells){
+  let want;
+  if(n <= 5)  want = 6 + (n % 5);
+  else if(n <= 10) want = 10 + (n % 6);
+  else if(n <= 20) want = 16 + (n % 8);
+  else if(n <= 40) want = 24 + (n % 10);
+  else want = 34 + (n % 14);
+  return Math.min(want, freeCells);
+}
+function blockCountForLevel(n, total){
+  if(n <= 2) return 0;
+  const base = Math.floor((n - 2) / 3) + 1;
+  return Math.min(base, Math.max(0, Math.floor(total * 0.35)));
+}
+
+function isValidPath(path, freeSet){
+  if(!path || !path.length) return false;
+  const seen = new Set();
+  for(let i=0;i<path.length;i++){
+    const [r,c] = path[i];
+    const k = r+","+c;
+    if(!freeSet.has(k)) return false;
+    if(seen.has(k)) return false;
+    seen.add(k);
+    if(i>0){
+      const [pr,pc] = path[i-1];
+      if(Math.abs(pr-r)+Math.abs(pc-c)!==1) return false;
+    }
+  }
+  return true;
+}
+function isConnected(freeSet, rows, cols, start){
+  if(!freeSet.has(start[0]+","+start[1])) return false;
+  const seen = new Set([start[0]+","+start[1]]);
+  const stack = [start];
+  while(stack.length){
+    const [r,c] = stack.pop();
+    for(const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]){
+      const nr=r+dr, nc=c+dc, k=nr+","+nc;
+      if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+      if(!freeSet.has(k) || seen.has(k)) continue;
+      seen.add(k); stack.push([nr,nc]);
+    }
+  }
+  return seen.size === freeSet.size;
+}
+function snakePath(rows, cols, freeSet, start){
+  const cells = [];
+  for(let r=0;r<rows;r++){
+    const cc = (r%2===0)? [...Array(cols).keys()] : [...Array(cols).keys()].reverse();
+    for(const c of cc) cells.push([r,c]);
+  }
+  let idx = 0;
+  if(start){
+    const si = cells.findIndex(([r,c])=>r===start[0]&&c===start[1]);
+    if(si>=0) idx = si;
+  }
+  const out = [];
+  for(let i=0;i<cells.length;i++){
+    const cell = cells[(idx+i)%cells.length];
+    if(freeSet.has(cell[0]+","+cell[1])) out.push(cell);
+  }
+  return out;
+}
+function tryBuildPath(rows, cols, freeSet, start, targetLen, rng){
+  const path = [start];
+  const visited = new Set([start[0]+","+start[1]]);
+  const dirsBase = [[-1,0],[1,0],[0,-1],[0,1]];
+  let guard = 0;
+  function dfs(){
+    guard++;
+    if(guard > 80000) return false;
+    if(path.length >= targetLen) return true;
+    const [r,c] = path[path.length-1];
+    const dirs = dirsBase.slice();
+    for(let i=dirs.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [dirs[i],dirs[j]]=[dirs[j],dirs[i]]; }
+    for(const [dr,dc] of dirs){
+      const nr=r+dr, nc=c+dc, k=nr+","+nc;
+      if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+      if(!freeSet.has(k) || visited.has(k)) continue;
+      visited.add(k); path.push([nr,nc]);
+      if(dfs()) return true;
+      path.pop(); visited.delete(k);
+    }
+    return false;
+  }
+  dfs();
+  return path.length >= 2 ? path : null;
 }
 function buildSolution(levelNumber){
   const [rows, cols] = gridSizeForLevel(levelNumber);
-  const targetLen = Math.min(pathLenForLevel(levelNumber), rows*cols);
   const rng = mulberry32(levelNumber * 1337);
-  for(let attempt=0; attempt<400; attempt++){
-    const sr = Math.floor(rng()*rows), sc = Math.floor(rng()*cols);
-    const visited = new Set([sr+","+sc]);
-    const path = [[sr,sc]];
-    while(path.length < targetLen){
-      const [r,c] = path[path.length-1];
-      const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
-      for(let i=dirs.length-1;i>0;i--){
-        const j = Math.floor(rng()*(i+1));
-        [dirs[i],dirs[j]] = [dirs[j],dirs[i]];
-      }
-      let moved = false;
-      for(const [dr,dc] of dirs){
-        const nr = r+dr, nc = c+dc;
-        if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
-        const key = nr+","+nc;
-        if(visited.has(key)) continue;
-        visited.add(key); path.push([nr,nc]); moved = true; break;
-      }
-      if(!moved) break;
+  const allCount = rows*cols;
+
+  for(let attempt=0; attempt<150; attempt++){
+    const maxBlocks = blockCountForLevel(levelNumber, allCount);
+    const wantBlocks = Math.min(maxBlocks, Math.floor(rng()* (maxBlocks+1)));
+    const blocked = new Set();
+    const startR = Math.floor(rng()*rows), startC = Math.floor(rng()*cols);
+    const startKey = startR+","+startC;
+    let tries = 0;
+    while(blocked.size < wantBlocks && tries < 300){
+      tries++;
+      const r = Math.floor(rng()*rows), c = Math.floor(rng()*cols);
+      const k = r+","+c;
+      if(k===startKey || blocked.has(k)) continue;
+      blocked.add(k);
     }
-    if(path.length === targetLen) return {rows, cols, path};
+    const freeSet = new Set();
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+      const k = r+","+c;
+      if(!blocked.has(k)) freeSet.add(k);
+    }
+    if(!isConnected(freeSet, rows, cols, [startR,startC])) continue;
+
+    const freeCount = freeSet.size;
+    const targetLen = pathLenForLevel(levelNumber, freeCount);
+
+    let path = tryBuildPath(rows, cols, freeSet, [startR,startC], targetLen, rng);
+    if(!path || path.length < targetLen){
+      const sn = snakePath(rows, cols, freeSet, [startR,startC]);
+      if(sn.length >= targetLen){
+        const cand = sn.slice(0, targetLen);
+        if(isValidPath(cand, freeSet)) path = cand;
+      }
+    }
+    if(path && path.length >= Math.min(targetLen, 4) && isValidPath(path, freeSet)){
+      return {rows, cols, path, blocked};
+    }
   }
-  const path = [];
-  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
-    const cc = (r % 2 === 0) ? c : cols-1-c;
-    path.push([r,cc]);
-  }
-  path.length = Math.min(targetLen, path.length);
-  return {rows, cols, path};
+
+  const freeSet = new Set();
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) freeSet.add(r+","+c);
+  const start = [0,0];
+  const sn = snakePath(rows, cols, freeSet, start);
+  const targetLen = pathLenForLevel(levelNumber, freeSet.size);
+  const path = sn.slice(0, Math.min(targetLen, sn.length));
+  return {rows, cols, path, blocked: new Set()};
 }
+
 const levelCache = new Map();
 function getLevel(n){
   if(!levelCache.has(n)){
@@ -191,6 +293,7 @@ function getLevel(n){
     levelCache.set(n, {
       number: n, rows: sol.rows, cols: sol.cols,
       solutionPath: sol.path,
+      blocked: sol.blocked || new Set(),
       activeSet: new Set(sol.path.map(([r,c])=>r+","+c)),
       start: sol.path[0], total: sol.path.length
     });
@@ -272,14 +375,15 @@ const game = {
 function computeCellSize(rows, cols){
   const wrap = $("boardWrap");
   const rect = wrap.getBoundingClientRect();
-  const availW = Math.max(rect.width, window.innerWidth) - 28;
-  const availH = Math.max(rect.height, 240) - 28;
+  const pad = 20;
   const gap = 6;
-  const maxW = (availW - gap*(cols-1) - 20) / cols;
-  const maxH = (availH - gap*(rows-1) - 20) / rows;
+  const availW = Math.max(80, rect.width - pad);
+  const availH = Math.max(80, rect.height - pad);
+  const maxW = (availW - gap*(cols-1)) / cols;
+  const maxH = (availH - gap*(rows-1)) / rows;
   let s = Math.min(maxW, maxH, 74);
-  if(!isFinite(s) || s < 16) s = Math.max(16, Math.min(maxW, maxH) || 30);
-  return Math.floor(s);
+  s = Math.floor(s);
+  return Math.max(16, s);
 }
 
 function buildBoard(level){
@@ -300,7 +404,14 @@ function buildBoard(level){
       const cell = document.createElement("div");
       cell.className = "cell";
       cell.dataset.r = r; cell.dataset.c = c;
-      if(!level.activeSet.has(r+","+c)) cell.classList.add("hidden");
+      const key = r+","+c;
+      if(level.blocked && level.blocked.has(key)){
+        cell.classList.add("blocked");
+        cell.style.fontSize = Math.floor(cellSize*0.5) + "px";
+        cell.textContent = "🐱";
+      } else if(!level.activeSet.has(key)){
+        cell.classList.add("hidden");
+      }
       if(r===level.start[0] && c===level.start[1]) cell.classList.add("start-mark");
       boardEl.appendChild(cell);
       row.push(cell);
@@ -323,7 +434,6 @@ function cellCenter(r,c){
   const cr = cell.getBoundingClientRect();
   return { x: cr.left - br.left + cr.width/2, y: cr.top - br.top + cr.height/2 };
 }
-
 function renderLine(){
   const svg = $("lineSvg");
   svg.innerHTML = "";
@@ -336,7 +446,6 @@ function renderLine(){
   path.setAttribute("stroke-width", Math.max(6, game.cellSize*0.22));
   svg.appendChild(path);
 }
-
 function renderPath(){
   if(!game.level) return;
   const level = game.level;
@@ -367,11 +476,16 @@ function setHelperMood(m){
 /* ---------- Ход ---------- */
 const isAdj = (a,b) => Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]) === 1;
 const pathIdx = (r,c) => game.path.findIndex(([pr,pc]) => pr===r && pc===c);
-
+function isWalkable(r,c){
+  const lv = game.level;
+  if(!lv) return false;
+  if(lv.blocked && lv.blocked.has(r+","+c)) return false;
+  return lv.activeSet.has(r+","+c);
+}
 function tryStep(r,c){
   if(game.won) return false;
   const lv = game.level;
-  if(!lv || !lv.activeSet.has(r+","+c)) return false;
+  if(!lv || !isWalkable(r,c)) return false;
   const idx = pathIdx(r,c);
   if(idx !== -1){
     if(idx === game.path.length-1) return false;
@@ -474,14 +588,20 @@ function updateHUD(){
   $("soundBtn").textContent = save.soundEnabled ? "🔊" : "🔇";
 }
 
-/* ---------- Загрузка ---------- */
+/* ---------- Загрузка уровня (стабильный автопереход) ---------- */
 function loadLevel(n){
   save.currentLevel = n; persist();
   const lv = getLevel(n);
-  game.level = lv; restartLevel();
-  buildBoard(lv); renderPath(); updateHUD();
+  game.level = lv;
+  game.path = []; game.visited.clear();
+  game.won = false; game.hintsUsed = 0; save.hintsUsedThisLevel = 0;
+  buildBoard(lv);          // сначала доска
+  renderPath();            // потом пустой путь
+  updateHUD();
   $("winOverlay").classList.remove("show");
   setHelperMood("neutral");
+  // гарантированно пересчитать размеры под новый уровень
+  setTimeout(() => { try{ rebuildKeepPath(); }catch(_){} }, 60);
 }
 
 /* ---------- Ввод ---------- */
@@ -492,7 +612,7 @@ function cellFromEvent(e){
   const lv = game.level; if(!lv) return null;
   let best = null, bd = Infinity;
   for(let r=0;r<lv.rows;r++) for(let c=0;c<lv.cols;c++){
-    if(!lv.activeSet.has(r+","+c)) continue;
+    if(!isWalkable(r,c)) continue;
     const cr = game.boardEls[r][c].getBoundingClientRect();
     const cx = cr.left - rect.left + cr.width/2;
     const cy = cr.top - rect.top + cr.height/2;
@@ -572,7 +692,11 @@ $("hintBtn").onclick = () => {
     persist(); updateHUD(); sfxHint(); toast(`Подсказка: +${steps} шагов`);
   } else toast("Вы на верном пути!");
 };
-$("nextLevelBtn").onclick = () => { $("winOverlay").classList.remove("show"); loadLevel(save.currentLevel+1); };
+$("nextLevelBtn").onclick = () => {
+  const next = save.currentLevel + 1;
+  $("winOverlay").classList.remove("show");
+  loadLevel(next);
+};
 $("replayBtn").onclick = () => { $("winOverlay").classList.remove("show"); restartLevel(); };
 
 /* ---------- Меню уровней ---------- */
@@ -592,6 +716,13 @@ function buildLevelGrid(){
     lv.activeSet.forEach(key => {
       const [r,c] = key.split(",").map(Number);
       ctx.fillStyle = "#F48C42";
+      const pad = Math.min(cw,ch)*0.12;
+      roundRect(ctx, c*cw+pad, r*ch+pad, cw-pad*2, ch-pad*2, Math.min(cw,ch)*0.18);
+      ctx.fill();
+    });
+    lv.blocked.forEach(key => {
+      const [r,c] = key.split(",").map(Number);
+      ctx.fillStyle = "#3B4350";
       const pad = Math.min(cw,ch)*0.12;
       roundRect(ctx, c*cw+pad, r*ch+pad, cw-pad*2, ch-pad*2, Math.min(cw,ch)*0.18);
       ctx.fill();
@@ -660,43 +791,36 @@ function runSelfTests(){
   }catch(e){ log("Детерминизм",false,e.message); }
   try{
     let ok=true, err="";
-    for(let n=1;n<=50;n++){
+    for(let n=1;n<=100;n++){
       const lv = getLevel(n);
       if(lv.solutionPath.length!==lv.total){ ok=false; err=`ур.${n}: len`; break; }
-      const seen = new Set();
-      for(let i=0;i<lv.solutionPath.length;i++){
-        const [r,c] = lv.solutionPath[i];
-        const key = r+","+c;
-        if(seen.has(key)){ ok=false; err=`ур.${n}: повтор`; break; }
-        seen.add(key);
-        if(i>0){
-          const [pr,pc] = lv.solutionPath[i-1];
-          if(Math.abs(pr-r)+Math.abs(pc-c)!==1){ ok=false; err=`ур.${n}: несоседние`; break; }
-        }
-        if(!lv.activeSet.has(key)){ ok=false; err=`ур.${n}: вне поля`; break; }
+      if(!isValidPath(lv.solutionPath, lv.activeSet)){ ok=false; err=`ур.${n}: invalid`; break; }
+      for(const [r,c] of lv.solutionPath){
+        if(lv.blocked.has(r+","+c)){ ok=false; err=`ур.${n}: путь по блоку`; break; }
       }
       if(!ok) break;
     }
-    log("Проходимость 1–50", ok, err);
-  }catch(e){ log("Проходимость",false,e.message); }
+    log("Проходимость 1–100 (без блоков на пути)", ok, err);
+  }catch(e){ log("Проходимость 1–100",false,e.message); }
   try{
     const lv = getLevel(3);
     let path=[], vis=new Set();
     const pi=(r,c)=>path.findIndex(([a,b])=>a===r&&b===c);
-    function step(r,c){
+    const walk=(r,c)=>{
+      const w = lv.activeSet.has(r+","+c) && !lv.blocked.has(r+","+c);
+      if(!w) return;
       if(pi(r,c)!==-1){ path=path.slice(0,pi(r,c)+1); return; }
       if(path.length===0){ if(r===lv.start[0]&&c===lv.start[1]){path.push([r,c]); vis.add(r+","+c);} return; }
       const [lr,lc]=path[path.length-1];
       if(Math.abs(lr-r)+Math.abs(lc-c)!==1) return;
-      if(!lv.activeSet.has(r+","+c)) return;
       path.push([r,c]); vis.add(r+","+c);
-    }
-    step(lv.start[0], lv.start[1]);
+    };
+    walk(lv.start[0], lv.start[1]);
     let ok = path.length===1;
-    step(lv.start[0]+1, lv.start[1]+1);
+    walk(lv.start[0]+1, lv.start[1]+1);
     if(path.length!==1) ok=false;
-    for(let i=1;i<Math.min(4,lv.solutionPath.length);i++) step(lv.solutionPath[i][0], lv.solutionPath[i][1]);
-    step(path[0][0], path[0][1]);
+    for(let i=1;i<Math.min(4,lv.solutionPath.length);i++) walk(lv.solutionPath[i][0], lv.solutionPath[i][1]);
+    walk(path[0][0], path[0][1]);
     if(path.length!==1) ok=false;
     log("Логика хода/отката", ok);
   }catch(e){ log("Логика хода/отката",false,e.message); }
@@ -740,18 +864,24 @@ function updateTestStatusUI(){
 }
 $("runTestsBtn").onclick = () => { runSelfTests(); toast("Тесты выполнены"); };
 
-/* ---------- Ресайз ---------- */
-let resizeTimer = null;
-window.addEventListener("resize", () => {
+/* ---------- Единый пересчёт размеров через ResizeObserver ---------- */
+function rebuildKeepPath(){
   if(!game.level) return;
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    const saved = game.path.map(p => [...p]);
-    buildBoard(game.level);
-    game.path = saved;
-    renderPath();
-  }, 120);
-});
+  const saved = game.path.map(p => [...p]);
+  buildBoard(game.level);
+  game.path = saved;
+  game.visited = new Set(saved.map(([r,c])=>r+","+c));
+  renderPath();
+}
+let _roTimer = null;
+function scheduleRebuild(){
+  clearTimeout(_roTimer);
+  _roTimer = setTimeout(rebuildKeepPath, 80);
+}
+if(window.ResizeObserver){
+  new ResizeObserver(scheduleRebuild).observe($("boardWrap"));
+}
+window.addEventListener("orientationchange", () => setTimeout(rebuildKeepPath, 200));
 
 /* ---------- Закрытие модалок ---------- */
 document.querySelectorAll('[data-close]').forEach(btn => {
@@ -782,27 +912,7 @@ document.addEventListener("contextmenu", e => e.preventDefault());
 document.addEventListener("touchmove", e => { if(e.target.closest(".board")) e.preventDefault(); }, {passive:false});
 document.addEventListener("gesturestart", e => e.preventDefault());
 
-window.addEventListener("load", () => {
-  init();
-  setTimeout(() => {
-    if(game.level){
-      const saved = game.path.map(p => [...p]);
-      buildBoard(game.level);
-      game.path = saved;
-      renderPath();
-    }
-  }, 250);
-});
-
-if(window.ResizeObserver){
-  new ResizeObserver(() => {
-    if(!game.level) return;
-    const saved = game.path.map(p => [...p]);
-    buildBoard(game.level);
-    game.path = saved;
-    renderPath();
-  }).observe(document.getElementById("boardWrap"));
-}
+window.addEventListener("load", () => { init(); });
 </script>
 </body>
 </html>

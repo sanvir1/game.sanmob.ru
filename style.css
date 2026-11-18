@@ -95,11 +95,9 @@ button{font-family:inherit; color:inherit; cursor:pointer; border:none; backgrou
 }
 @keyframes pulseHead{0%,100%{transform:scale(.85); opacity:.85}50%{transform:scale(1.05); opacity:1}}
 .cell.start-mark::before{
-  content:"🐾";
+  content:"";
   position:absolute; inset:0;
-  display:flex; align-items:center; justify-content:center;
-  font-size:calc(var(--cell-size, 40px) * 0.55);
-  line-height:1;
+  background:no-repeat center/55% url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><g fill='%23F48C42'><ellipse cx='50' cy='62' rx='20' ry='16'/><ellipse cx='24' cy='40' rx='10' ry='12'/><ellipse cx='43' cy='30' rx='9' ry='11'/><ellipse cx='62' cy='30' rx='9' ry='11'/><ellipse cx='79' cy='40' rx='10' ry='12'/></g></svg>");
   opacity:.95;
   animation:pawPulse 1.4s infinite;
   pointer-events:none;

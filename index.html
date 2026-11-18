@@ -595,13 +595,11 @@ function loadLevel(n){
   game.level = lv;
   game.path = []; game.visited.clear();
   game.won = false; game.hintsUsed = 0; save.hintsUsedThisLevel = 0;
-  buildBoard(lv);          // сначала доска
-  renderPath();            // потом пустой путь
+  buildBoard(lv);
+  renderPath();
   updateHUD();
   $("winOverlay").classList.remove("show");
   setHelperMood("neutral");
-  // гарантированно пересчитать размеры под новый уровень
-  setTimeout(() => { try{ rebuildKeepPath(); }catch(_){} }, 60);
 }
 
 /* ---------- Ввод ---------- */
@@ -625,6 +623,7 @@ function cellFromEvent(e){
 const boardEl = $("board");
 boardEl.addEventListener("pointerdown", e => {
   e.preventDefault();
+  e.stopPropagation();
   try{ boardEl.setPointerCapture(e.pointerId); }catch(_){}
   const cell = cellFromEvent(e); if(!cell) return;
   game.dragging = true; game.lastPointerCell = cell;
@@ -866,7 +865,7 @@ $("runTestsBtn").onclick = () => { runSelfTests(); toast("Тесты выпол�
 
 /* ---------- Единый пересчёт размеров через ResizeObserver ---------- */
 function rebuildKeepPath(){
-  if(!game.level) return;
+  if(!game.level || game.dragging) return;   // не дёргаем доску во время drag
   const saved = game.path.map(p => [...p]);
   buildBoard(game.level);
   game.path = saved;
@@ -876,12 +875,12 @@ function rebuildKeepPath(){
 let _roTimer = null;
 function scheduleRebuild(){
   clearTimeout(_roTimer);
-  _roTimer = setTimeout(rebuildKeepPath, 80);
+  _roTimer = setTimeout(rebuildKeepPath, 120);
 }
 if(window.ResizeObserver){
   new ResizeObserver(scheduleRebuild).observe($("boardWrap"));
 }
-window.addEventListener("orientationchange", () => setTimeout(rebuildKeepPath, 200));
+
 
 /* ---------- Закрытие модалок ---------- */
 document.querySelectorAll('[data-close]').forEach(btn => {
@@ -909,7 +908,12 @@ function init(){
 }
 
 document.addEventListener("contextmenu", e => e.preventDefault());
-document.addEventListener("touchmove", e => { if(e.target.closest(".board")) e.preventDefault(); }, {passive:false});
+document.addEventListener("touchmove", e => {
+  if(e.target.closest(".board") || game.dragging) e.preventDefault();
+}, {passive:false});
+document.addEventListener("pointermove", e => {
+  if(game.dragging) e.preventDefault();
+}, {passive:false});
 document.addEventListener("gesturestart", e => e.preventDefault());
 
 window.addEventListener("load", () => { init(); });
